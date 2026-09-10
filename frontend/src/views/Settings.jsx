@@ -150,7 +150,7 @@ export default function Settings() {
       </Section>
     )}
 
-    {(user || MOBILE) && <NotificationsCard S={S} update={update} toast={toast} />}
+    {(user || MOBILE) && <NotificationsCard S={S} update={update} toast={toast} restPush={config?.features?.restTimerPush !== false} />}
 
     {/* ---------- appearance ---------- */}
     <Section title={t('Appearance')} footer={DEMO || MOBILE ? undefined : t('synced with your profile')}>
@@ -249,9 +249,9 @@ function effortHelpSheet() {
   </>)
 }
 
-function NotificationsCard({ S, update, toast }) {
+function NotificationsCard({ S, update, toast, restPush = true }) {
   if (MOBILE) return <MobileReminderCard S={S} update={update} toast={toast} />
-  return <PushCard S={S} update={update} toast={toast} />
+  return <PushCard S={S} update={update} toast={toast} restPush={restPush} />
 }
 
 // Mobile build: the reminder is a native local notification scheduled on planned weekdays —
@@ -283,7 +283,7 @@ function MobileReminderCard({ S, update, toast }) {
   )
 }
 
-function PushCard({ S, update, toast }) {
+function PushCard({ S, update, toast, restPush = true }) {
   const [on, setOn] = useState(false)
   const [busy, setBusy] = useState(false)
   const supported = pushSupported()
@@ -320,7 +320,8 @@ function PushCard({ S, update, toast }) {
           (S.reminder?.tz ? ' ' + t('Timezone: {0} (auto-detected, updates if you travel).', S.reminder.tz) : '')
         : null}
     >
-      <Row icon="bell" iconTint="var(--red)" title={t('Push notifications')} subtitle={t('Rest-timer alerts, even if openGym is closed.')}>
+      <Row icon="bell" iconTint="var(--red)" title={t('Push notifications')}
+        subtitle={restPush ? t('Rest-timer alerts, even if openGym is closed.') : t('Workout day reminders, even if openGym is closed.')}>
         <Switch checked={on} disabled={busy} onChange={toggle} />
       </Row>
       {on && (
@@ -333,6 +334,10 @@ function PushCard({ S, update, toast }) {
           <input type="time" className="timef" value={S.reminder?.time || DEF.reminder.time}
             onChange={e => update(s => { s.reminder = { ...(s.reminder || DEF.reminder), time: e.target.value, tz: localTZ() } })} />
         </Row>
+      )}
+      {on && !restPush && (
+        <Row icon="timer" iconTint="var(--grey)" title={t('No rest-timer alerts on this server')}
+          subtitle={t('The rest timer still counts down on screen while openGym is open.')} />
       )}
     </Section>
     {on && <div style={{ marginTop: -12, marginBottom: 22 }}><Button size="sm" icon="bell" onClick={test}>{t('Send test notification')}</Button></div>}

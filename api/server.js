@@ -294,7 +294,14 @@ const routes = {
   // the app it was before the feature existed.
   'GET /api/config': async (req, res) => {
     const coach = coachConfig.publicConfig();
-    json(res, 200, { invite_only: INVITE_ONLY, min_password: MIN_PASSWORD, ...(coach ? { coach } : {}) });
+    // `features` says which optional pieces this host can actually do. Everything is available
+    // here; the serverless build in frontend/api reports restTimerPush: false, and the client
+    // hides what the host can't deliver instead of calling an endpoint that would fail.
+    json(res, 200, {
+      invite_only: INVITE_ONLY, min_password: MIN_PASSWORD,
+      features: { restTimerPush: true, push: true },
+      ...(coach ? { coach } : {})
+    });
   },
 
   'GET /api/me': async (req, res) => {

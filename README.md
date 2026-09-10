@@ -120,6 +120,11 @@ a build step locally.
 
 > Want it reachable from your phone over the internet? You'll need an HTTPS
 > domain — a one-line change in `.env`. See **[docs/SELF_HOSTING.md](docs/SELF_HOSTING.md)**.
+>
+> Prefer no server to run at all? It also deploys to Vercel as static files plus serverless
+> functions — **[docs/VERCEL.md](docs/VERCEL.md)**. That trades away the AI Coach and
+> background rest-timer alerts, which both need a process that stays awake; the guide says
+> exactly what you keep and what you lose.
 
 ## Mobile app (no server at all)
 
