@@ -42,7 +42,7 @@ updates:
       - dependency-name: '@capacitor/*'
         update-types: ['version-update:semver-major']
 
-  # Backend — api/package.json (@simplewebauthn/server, web-push)
+  # Backend — api/package.json (@supabase/supabase-js, web-push)
   - package-ecosystem: npm
     directory: /api
     schedule:
@@ -52,7 +52,7 @@ updates:
       api:
         patterns: ['*']
         update-types: ['minor', 'patch']
-      # Two dependencies, but one of them verifies passkeys — a major there is worth reading on
+      # Two dependencies, but one of them is the auth and database client — a major there is worth reading on
       # its own rather than alongside anything else.
       api-major:
         patterns: ['*']

@@ -1,7 +1,14 @@
 # Self-hosting openGym
 
-openGym is two small containers (a web server and an API) plus a folder of your data.
+openGym is two small containers (a web server and an API), a Supabase project holding the
+accounts and training data, and a small folder of local runtime files.
 This guide takes you from "just cloned it" to "using it from my phone over the internet".
+
+## 0. Create the Supabase project (first, once)
+
+Accounts and workout data live in Supabase, so set that up before starting the containers:
+**[docs/SUPABASE.md](SUPABASE.md)**. It takes about five minutes and the free tier is enough.
+You come back here with two values for `.env`, `SUPABASE_URL` and `SUPABASE_SECRET_KEY`.
 
 ## 1. Run it locally (5 minutes)
 
@@ -11,14 +18,14 @@ Requirements: [Docker](https://docs.docker.com/get-docker/) with the Compose plu
 git clone https://github.com/DuarteSantos8/gym-app opengym
 cd opengym
 cp .env.example .env
-docker compose pull   # prebuilt images from ghcr.io (amd64 + arm64) — or skip and build from source
-docker compose up -d
+$EDITOR .env          # paste SUPABASE_URL and SUPABASE_SECRET_KEY
+docker compose up -d --build
 ```
 
 - First start downloads the exercise images/GIFs (~140 MB) once into `app/img` and `app/gif`.
-- Open **http://localhost:8080** and create a profile with a passkey.
-- Rather build from source than pull prebuilt images? Skip `docker compose pull` and run
-  `docker compose up -d --build` instead — no Node needed locally either way.
+- Open **http://localhost:8080** and create a profile with an email and a password.
+- This fork builds from source rather than pulling the upstream images: its API talks to
+  Supabase, so the published `opengym-api` image is a different server and would not work.
 
 Check it's healthy:
 
@@ -29,18 +36,18 @@ curl http://localhost:8080/api/health      # {"ok":true,...}
 
 Logs: `docker compose logs -f`. Stop: `docker compose down`.
 
-## 2. Understand the passkey requirement (important)
+## 2. Where HTTPS still matters
 
-openGym signs you in with **passkeys** (WebAuthn). Browsers enforce two rules:
+Signing in works anywhere, including over a plain LAN address — an email and a password are not
+tied to a hostname. Two features are, because browsers only offer them on a secure origin
+(`https://…`, or `http://localhost`):
 
-1. Passkeys are bound to an exact **hostname** (`RP_ID`).
-2. They only work over **HTTPS** — with one exception: `http://localhost`.
+- **Push notifications** — rest-timer alerts and the workout-day reminder.
+- **Keep screen awake** during a workout.
 
-So `http://localhost:8080` works on the machine running Docker, but **another device (your
-phone) cannot use `http://<your-LAN-ip>:8080`** — that's neither localhost nor HTTPS, so the
-passkey prompt won't appear. To use openGym from your phone you need a real HTTPS hostname.
-
-(You can still open it over LAN in **guest mode**, which stores data only in that browser.)
+Over `http://<your-LAN-ip>:8080` those two switches show as unsupported, and the session cookie
+cannot be marked `Secure`. Everything else behaves normally. For daily use from a phone, and for
+anything reachable outside your own network, set up a real HTTPS hostname — that's section 3.
 
 ## 3. Expose it over HTTPS on your own domain
 
@@ -69,21 +76,19 @@ Then set your domain in `.env` and restart:
 
 ```bash
 # .env
-RP_ID=gym.example.com
 ORIGIN=https://gym.example.com
 WEB_PORT=8080
-RP_NAME=openGym
 ```
 
 ```bash
-docker compose up -d
+docker compose up -d --build
 ```
 
 Visit `https://gym.example.com`, create your profile, and add it to your home screen
 (iOS: Share → Add to Home Screen · Android: ⋮ → Add to Home screen).
 
-> Changing `RP_ID` later invalidates existing passkeys (they were bound to the old hostname).
-> Pick your domain before people register.
+> `ORIGIN` has to match the address people actually type — it is what marks the session cookie
+> `Secure`. Changing it later is safe: accounts live in Supabase and are not bound to a hostname.
 
 ## 4. Multiple users
 
@@ -93,37 +98,50 @@ default: open signup, no admin.
 If you'd rather control who gets in, two optional settings in `.env` turn that around:
 
 ```bash
-ADMIN_UIDS=youruserid      # comma-separated; these users get the admin dashboard
-INVITE_ONLY=1              # new profiles need an invite code
+ADMIN_UIDS=00000000-0000-0000-0000-000000000000   # comma-separated; these users get the dashboard
+INVITE_ONLY=1                                      # new profiles need an invite code
 ```
 
-Register your own passkey profile first, then find your id in `./data/db.json` under `users[].id`
-and put it in `ADMIN_UIDS`. You'll get an **Admin dashboard** link in Settings: who's training
+Create your own profile first, then find its id in the Supabase dashboard — **Table Editor →
+`profiles`**, or **Authentication → Users** — and put it in `ADMIN_UIDS`. Setting that row's
+`admin` column to `true` instead does the same thing and needs no restart. You'll get an **Admin dashboard** link in Settings: who's training
 right now, each user's workout history and body weight, the ability to disable an account (signed
 out and locked out everywhere until you re-enable it), and — with `INVITE_ONLY=1` — generating and
 revoking invite codes. Existing accounts keep working when you switch invite-only on. Admin access
-is gated by your passkey and enforced server-side, so it needs no separate login.
+is gated by your own sign-in and enforced server-side, so it needs no separate login.
 
 Prefer to keep the whole thing off the open internet? A VPN or an auth proxy (Authelia, Cloudflare
 Access…) in front still works, and composes with the above.
 
 ## 5. Backups
 
-Everything is in `./data`:
+Profiles and training data are in Supabase, so that is what to back up. Paid projects take
+automatic daily backups; on the free tier, dump it yourself:
 
 ```bash
-tar czf opengym-backup-$(date +%F).tar.gz data/
+supabase db dump --db-url "$SUPABASE_DB_URL" -f opengym-$(date +%F).sql
 ```
 
-That archive contains all profiles, passkeys and workout history. Restore by unpacking it back
-into the project folder. (Individual users can also export their own data as JSON from Settings.)
+(The connection string is in the dashboard under **Connect**. Treat the dump like the database:
+it contains everyone's training history.)
+
+`./data` is worth keeping too, but it holds no training data — the session secret, the VAPID
+keypair, the Coach's job records and its encrypted provider credential, plus a disposable mirror
+of each profile's state:
+
+```bash
+tar czf opengym-runtime-$(date +%F).tar.gz data/
+```
+
+Losing it signs everyone out and disconnects the Coach; nobody's history is affected. (Individual
+users can also export their own data as JSON from Settings.)
 
 ## 6. Notifications
 
 openGym can push two kinds of alert to your phone/desktop, even when the app isn't open:
 rest-timer-over, and a reminder on days you have a workout planned but haven't logged one yet.
-Turn it on per-profile in **Settings → Notifications** (requires a signed-in passkey profile and
-HTTPS — see section 3).
+Turn it on per-profile in **Settings → Notifications** (requires a signed-in profile and
+HTTPS — see section 2).
 
 No setup needed server-side, and nothing to configure per timezone: VAPID keys are generated on
 first run and saved to `./data/vapid.json`, and each user's browser reports its own timezone
@@ -206,7 +224,7 @@ people's training notes are different powers.
 
 Only the profile that asked, and only: their plan, the training window under review, their
 weigh-ins and goal weight, their intake answers, and their unit/language/effort scale. Names,
-passkeys, push subscriptions and every other profile's data stay here. The job itself runs as
+credentials, push subscriptions and every other profile's data stay here. The job itself runs as
 an unprivileged user that cannot read `./data` at all — the CLI sees its own payload and
 nothing else.
 
@@ -233,11 +251,12 @@ act on it.
 
 | Symptom | Fix |
 |---|---|
-| No passkey prompt on my phone | You're on `http://` or an IP, not HTTPS. Set up a domain (section 3). |
-| "verification failed" on login | `RP_ID`/`ORIGIN` don't match the URL in the address bar. Make them exact, restart. |
+| API container exits at startup | `SUPABASE_URL` / `SUPABASE_SECRET_KEY` are missing or wrong in `.env`. `docker compose logs api` says which. |
+| Sign-up fails with a table error | The schema was never applied to the project — see [docs/SUPABASE.md](SUPABASE.md). |
+| Signed in but "profile missing" | The row in `profiles` was deleted while the account in Supabase Auth remains. Delete the user under Authentication → Users and sign up again. |
 | Media didn't download | `docker compose logs media`. Re-run `docker compose up -d`, or run `./scripts/fetch-media.sh`. |
 | Port 8080 already used | Set `WEB_PORT=9090` in `.env` (and update `ORIGIN` for local testing). |
 | No "Notifications" option in Settings | Requires a signed-in profile and HTTPS (or `localhost`) — guest mode and plain HTTP over LAN can't subscribe. |
 | Day reminder fires at the wrong time | Toggle it off and on in Settings so it re-detects your browser's timezone (also happens automatically on every app load — see section 6). |
 | Want to reset a stuck login | Delete the cookie in your browser; sessions are just signed cookies. |
-| `docker compose pull` fails with "denied" / "unauthorized" | The prebuilt images aren't published yet, or need to be, or the GHCR package is still private — build from source instead (`docker compose up -d --build`). |
+| Forgot a password | No self-serve reset yet (it needs SMTP). Set a new one for the user under **Authentication → Users** in the Supabase dashboard. |

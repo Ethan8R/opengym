@@ -7,7 +7,7 @@
 **A self-hosted gym & body-weight tracker you actually own.**
 
 Plan your week, run guided workouts, track every set and your body weight over time —
-on your phone, synced across devices, behind your own passkey login.
+on your phone, synced across devices, behind your own login.
 No account on someone else's server, no subscription, no ads. Just `docker compose up`.
 
 <br>
@@ -58,7 +58,7 @@ No account on someone else's server, no subscription, no ads. Just `docker compo
 ### [🌐 opengym.duarte-santos.ch](https://opengym.duarte-santos.ch) · [▶ Try the live demo](https://duartesantos8.github.io/openGym/)
 
 No signup, nothing to install — it runs entirely in your browser on example data.<br>
-<sub>There's no server behind the demo, so passkey sign-in, sync across devices and the
+<sub>There's no server behind the demo, so sign-in, sync across devices and the
 admin dashboard only exist in a self-hosted instance.</sub>
 
 </div>
@@ -68,7 +68,7 @@ admin dashboard only exist in a self-hosted instance.</sub>
 Most workout apps lock your data behind a login on their servers, nag you to upgrade, or
 disappear when the startup does. openGym is the opposite: **it runs on your box, your data
 stays in a folder you control, and it's yours to fork.** It still feels modern — installable
-as a home-screen app, passkey sign-in, offline support, sync across your phone and laptop.
+as a home-screen app, offline support, sync across your phone and laptop.
 
 ## Features
 
@@ -90,7 +90,7 @@ as a home-screen app, passkey sign-in, offline support, sync across your phone a
 - 💪 **Muscle map** — a front-and-back body diagram shaded by how much work each muscle got, over a week, a month or all time. It names the muscles you *haven't* trained in that period, previews what a routine hits while you build it, and shows what you just trained when you finish. Male or female figure, your pick
 - 🔔 **Push notifications** — rest-timer alerts even with the app closed, plus an optional reminder on days you have a workout planned but haven't logged one. Opt in per profile; keys are generated on first run, nothing to configure
 - 🤖 **AI Coach** (optional) — an AI that *designs* your plan and adjusts it from what you actually log. A short intake produces a complete weekly plan you can refine in plain language; on demand or on a schedule it reads your stalls, effort ratings, adherence and body-weight trend and proposes **discrete, explained changes** you accept one by one. Choose the official Claude Agent SDK or the bundled OpenAI Codex CLI with ChatGPT device-code sign-in; it is off until the instance owner enables it, needs each profile's separate consent, and never changes anything without your approval — every change-set is snapshotted and revertible. The progression engine still owns your session-to-session weights. **[Full guide →](docs/AI_COACH.md)**
-- 🔑 **Passkeys, not passwords** — Face ID / Touch ID / fingerprint login; each profile keeps its own data, synced across devices
+- 🔑 **Your accounts, your database** — email + password sign-in through [Supabase](https://supabase.com) on a project you own; each profile keeps its own data, synced across devices
 - 🛠️ **Admin dashboard** (optional) — for whoever runs the instance: who's training right now, per-user history, disable accounts, and invite-only signup. Off by default, so a fresh instance stays open with no admin
 - 🎨 **Designed, not assembled** — light/dark themes and 8 accent colors saved to your profile, over a hand-drawn icon set instead of emoji, so it looks the same on every phone
 - 🌍 **12 languages** — full UI translation (EN, DE, ES, FR, IT, PT, PL, TR, RU, ZH, KO, HI); exercise instructions localized in 10 of them, loaded on demand so the app stays fast
@@ -100,23 +100,26 @@ as a home-screen app, passkey sign-in, offline support, sync across your phone a
 
 ## Quick start (self-host)
 
-You need [Docker](https://docs.docker.com/get-docker/) with Compose.
+You need [Docker](https://docs.docker.com/get-docker/) with Compose, and a free
+[Supabase](https://supabase.com) project for the accounts and the database.
+
+First set up Supabase — create the project, run one SQL file, copy two keys:
+**[docs/SUPABASE.md](docs/SUPABASE.md)** (about five minutes). Then:
 
 ```bash
 git clone https://github.com/DuarteSantos8/openGym
 cd openGym
 cp .env.example .env
-docker compose pull   # grab prebuilt images (amd64 + arm64) — skip to build from source instead
-docker compose up -d
+$EDITOR .env          # paste SUPABASE_URL and SUPABASE_SECRET_KEY
+docker compose up -d --build
 ```
 
-Open **http://localhost:8080**, tap **Create profile**, and you're in. First launch downloads
-the exercise media (~140 MB) once. Prefer building the images yourself instead of pulling from
-`ghcr.io`? Drop the `pull` step and run `docker compose up -d --build` — you don't need Node or
-a build step locally either way.
+Open **http://localhost:8080**, tap **Create new profile**, and you're in. First launch
+downloads the exercise media (~140 MB) once and builds the two images — you don't need Node or
+a build step locally.
 
-> Want it reachable from your phone over the internet with passkeys? You'll need an HTTPS
-> domain — a two-line change in `.env`. See **[docs/SELF_HOSTING.md](docs/SELF_HOSTING.md)**.
+> Want it reachable from your phone over the internet? You'll need an HTTPS
+> domain — a one-line change in `.env`. See **[docs/SELF_HOSTING.md](docs/SELF_HOSTING.md)**.
 
 ## Mobile app (no server at all)
 
@@ -141,21 +144,26 @@ mobile app is the install-and-done flavor.
                        └──────────────────────────────┘│
                                                         ▼
                                         ┌──────────────────────────┐
-                                        │  api  (Node + WebAuthn)  │
-                                        │   └─ ./data (JSON files) │
-                                        └──────────────────────────┘
+                                        │  api  (Node, no framework)│
+                                        │   └─ secret key ──────────┼──▶ Supabase
+                                        └──────────────────────────┘    (auth + Postgres)
 ```
 
 - **frontend/** — React + Vite (React Router + Zustand), built to static files **inside Docker**
-- **api/** — Node with no framework, one dependency (`@simplewebauthn/server`), storing everything as plain JSON files under `./data`
-- **web/** — a multi-stage image that builds the frontend and serves it with nginx, proxying `/api` to the backend so it's all on **one origin** (passkeys require this)
+- **api/** — Node with no framework, talking to Supabase with the project's secret key; the browser holds no Supabase credential and never reaches the database directly
+- **web/** — a multi-stage image that builds the frontend and serves it with nginx, proxying `/api` to the backend so it's all on **one origin**
 
 ## Your data
 
-Lives in `./data` on your host: `db.json` (profiles + public passkeys), `state-<user>.json`
-(each user's plan, workouts, body weight, settings), and `secret` (the session-cookie key).
-**Back up `./data` and you've backed up everything.** Passkey private keys never touch the
-server — they stay in your phone's secure hardware / your password manager.
+Profiles, plans, workouts and weigh-ins live in **your** Supabase project — one you created, on
+an account you control, that you can dump or delete at any time. Passwords are hashed by
+Supabase Auth and the server never sees them in the clear.
+
+`./data` on your host keeps only what does not belong in a database: `secret` (the
+session-cookie key, and the AI Coach's credential-encryption key), `vapid.json` (push keys),
+the Coach's job records, and a disposable local mirror of each profile's state. **Back up the
+Supabase project and you've backed up everyone's training history** — see
+[docs/SUPABASE.md](docs/SUPABASE.md).
 
 ## Configuration
 
@@ -163,10 +171,11 @@ All via `.env` (see `.env.example`):
 
 | Variable      | What it is                                           | Default                 |
 |---------------|------------------------------------------------------|-------------------------|
-| `RP_ID`       | Hostname passkeys are bound to                       | `localhost`             |
+| `SUPABASE_URL` | Your Supabase project URL — **required**            | *(none)*                |
+| `SUPABASE_SECRET_KEY` | The project's secret key — **required**, server-only | *(none)*        |
 | `ORIGIN`      | Full URL the app is served from                      | `http://localhost:8080` |
 | `WEB_PORT`    | Host port for the web UI                             | `8080`                  |
-| `RP_NAME`     | Name shown in the passkey prompt                     | `openGym`               |
+| `SESSION_DAYS` | How long a sign-in lasts                            | `90`                    |
 | `ADMIN_UIDS`  | User ids that get the admin dashboard (comma-separated) | *(none)*             |
 | `INVITE_ONLY` | Require an invite code to create a profile           | *(off)*                 |
 | `COACH_DISABLED` | Force the AI Coach off, whatever the admin dashboard says | *(unset)*        |
@@ -210,8 +219,8 @@ React, the router and Zustand.
 ## Community
 
 - **[Q&A](https://github.com/DuarteSantos8/openGym/discussions/categories/q-a)** — self-hosting
-  help, passkey/login trouble, "how do I…". Most login problems turn out to be an `RP_ID`/`ORIGIN`
-  mismatch.
+  help, login trouble, "how do I…". Most setup problems turn out to be a missing Supabase key
+  or a schema that was never applied.
 - **[Ideas](https://github.com/DuarteSantos8/openGym/discussions/categories/ideas)** — features
   worth talking through before anyone writes code.
 - **[Show and tell](https://github.com/DuarteSantos8/openGym/discussions/categories/show-and-tell)**
