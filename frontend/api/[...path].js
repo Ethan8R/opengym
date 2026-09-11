@@ -353,7 +353,12 @@ async function runReminders(req, res) {
 
 export default async function handler(req, res) {
   const url = new URL(req.url, 'http://x');
-  const key = req.method + ' ' + url.pathname.replace(/\/+$/, '');
+  // Nested paths (/api/push/subscribe, /api/admin/users, …) arrive via the rewrite in
+  // vercel.json, which rewrites req.url to this function's own path and puts the original in
+  // __p. Single-segment paths match the function directly and still have their real pathname.
+  const rewritten = url.searchParams.get('__p');
+  const pathname = (rewritten ? '/api/' + rewritten : url.pathname).replace(/\/+$/, '');
+  const key = req.method + ' ' + pathname;
 
   // Misconfiguration is the likeliest failure on a fresh deployment, and there is no boot log on
   // Vercel for anyone to read, so say it in the response instead of failing obscurely.

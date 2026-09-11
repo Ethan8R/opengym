@@ -8,5 +8,11 @@
       "path": "/api/cron/reminders",
       "schedule": "0 17 * * *"
     }
+  ],
+  "rewrites": [
+    {
+      "source": "/api/:path+",
+      "destination": "/api/[...path]?__p=:path"
+    }
   ]
 }
