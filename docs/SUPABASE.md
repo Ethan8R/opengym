@@ -102,6 +102,10 @@ with no policies as a second lock on the same door.
 Deleting a user under **Authentication → Users** cascades: their profile, state, subscriptions
 and invite links go with them.
 
+Creating one there works too, even though the dashboard only writes `auth.users`: openGym adds
+the matching `profiles` row the first time they sign in. Set a `name` in the user's metadata to
+choose their display name, otherwise it uses the part of the email before the `@`.
+
 ### What stays on disk
 
 `./data` is still there, and still worth mounting on a volume, but it holds no training data:

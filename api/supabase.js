@@ -112,12 +112,42 @@ export async function allProfiles() {
   return ok(await sb.from('profiles').select('*').order('created_at'), 'load profiles') || [];
 }
 
+export async function profileById(id) {
+  const { data, error } = await sb.from('profiles').select('*').eq('id', id).maybeSingle();
+  if (error) throw new Error('load profile: ' + error.message);
+  return data || null;
+}
+
 export async function insertProfile(row) {
   return ok(await sb.from('profiles').insert(row).select().single(), 'create profile');
 }
 
 export async function updateProfile(id, patch) {
   return ok(await sb.from('profiles').update(patch).eq('id', id).select().single(), 'update profile');
+}
+
+/**
+ * Give an account its missing `profiles` row.
+ *
+ * Creating a user straight in the Supabase dashboard only writes `auth.users`, so the password
+ * works but there is nothing here holding their display name — and the sign-in dead-ends. That is
+ * a reasonable thing for an operator to do, so adopt the account instead of refusing it. The name
+ * comes from the metadata the dashboard can set, falling back to the local part of the email.
+ *
+ * Not an invite-only loophole: the only way to have an auth user with no profile is for somebody
+ * with dashboard access to have made one deliberately.
+ */
+export async function adoptAccount(uid) {
+  const { data, error } = await sb.auth.admin.getUserById(uid);
+  if (error || !data?.user) return null;
+  const u = data.user;
+  const name = String(u.user_metadata?.name || (u.email || '').split('@')[0] || 'Athlete').trim().slice(0, 40);
+  try {
+    return await insertProfile({ id: uid, name: name || 'Athlete' });
+  } catch (e) {
+    // Two sign-ins racing each other — whoever lost reads back the row the winner just made.
+    return await profileById(uid);
+  }
 }
 
 /* ---------- per-profile state ---------- */

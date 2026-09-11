@@ -94,7 +94,9 @@ const routes = {
     // attacker which addresses have profiles here.
     if (!uid) return json(res, 401, { error: 'wrong email or password' });
 
-    const user = await store.profile(uid);
+    // An account created in the Supabase dashboard has no profile yet; give it one rather than
+    // leaving somebody with working credentials and no way in.
+    const user = (await store.profile(uid)) || (await store.adoptAccount(uid));
     if (!user) return json(res, 500, { error: 'profile missing — ask the instance admin' });
     if (user.disabled) return json(res, 403, { error: 'this account has been disabled' });
     json(res, 200, { user: publicUser(user) }, { 'Set-Cookie': sessionCookie(user) });

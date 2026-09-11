@@ -253,7 +253,7 @@ act on it.
 |---|---|
 | API container exits at startup | `SUPABASE_URL` / `SUPABASE_SECRET_KEY` are missing or wrong in `.env`. `docker compose logs api` says which. |
 | Sign-up fails with a table error | The schema was never applied to the project — see [docs/SUPABASE.md](SUPABASE.md). |
-| Signed in but "profile missing" | The row in `profiles` was deleted while the account in Supabase Auth remains. Delete the user under Authentication → Users and sign up again. |
+| Made a user in the Supabase dashboard — can they sign in? | Yes. The dashboard only writes `auth.users`; openGym creates the matching `profiles` row on their first sign-in, naming them from the metadata `name` if it's set and the email otherwise. |
 | Media didn't download | `docker compose logs media`. Re-run `docker compose up -d`, or run `./scripts/fetch-media.sh`. |
 | Port 8080 already used | Set `WEB_PORT=9090` in `.env` (and update `ORIGIN` for local testing). |
 | No "Notifications" option in Settings | Requires a signed-in profile and HTTPS (or `localhost`) — guest mode and plain HTTP over LAN can't subscribe. |

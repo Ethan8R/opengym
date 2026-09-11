@@ -366,6 +366,12 @@ const routes = {
     // another instance), so look again before giving up.
     let user = userById(uid);
     if (!user) { await reloadCache(); user = userById(uid); }
+    // Still nothing: either an account made straight in the Supabase dashboard, which has no
+    // profile row of its own, or one made on another instance. Adopt it and cache it.
+    if (!user) {
+      const row = await store.adoptAccount(uid);
+      if (row) { user = toUser(row); users.push(user); }
+    }
     if (!user) return json(res, 500, { error: 'profile missing — ask the instance admin' });
     if (user.disabled) return json(res, 403, { error: 'this account has been disabled' });
     json(res, 200, { user: publicUser(user) }, { 'Set-Cookie': sessionCookie(user) });
