@@ -4,7 +4,7 @@
  *   · no shell, ever — argv is an array, and the user's free text never reaches it anyway
  *     (it travels inside the payload file, as JSON data)
  *   · the environment is built from nothing rather than inherited, so the child cannot read
- *     RP_ID, ADMIN_UIDS, VAPID keys or anything else this process holds
+ *     SUPABASE_SECRET_KEY, ADMIN_UIDS, VAPID keys or anything else this process holds
  *   · the child runs as an unprivileged user (created in the Dockerfile) whose uid cannot
  *     read ./data, so a CLI that decided to go looking finds nothing to find
  */

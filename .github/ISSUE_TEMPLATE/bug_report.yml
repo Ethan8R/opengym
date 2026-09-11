@@ -49,12 +49,13 @@ body:
       required: true
 
   - type: checkboxes
-    id: passkey
+    id: login
     attributes:
-      label: Is this about login / passkeys?
+      label: Is this about login or Supabase?
       description: >
-        Most login issues are an `RP_ID`/`ORIGIN` mismatch — check your `.env` against the
-        domain you're accessing openGym from before reporting. See the
-        [self-hosting guide](../../docs/SELF_HOSTING.md).
+        Most setup issues are a missing Supabase key in `.env`, or a schema that was never
+        applied to the project. Check `docker compose logs api` and the
+        [Supabase guide](../../docs/SUPABASE.md) before reporting. Never paste your
+        `SUPABASE_SECRET_KEY` into an issue.
       options:
-        - label: Yes, this is a login/passkey issue and I've already checked RP_ID/ORIGIN
+        - label: Yes, and I've checked the api logs and docs/SUPABASE.md

@@ -7,7 +7,7 @@
  * property the FR-11 test actually asserts.
  *
  * Excluded on purpose and permanently: the profile's display name and user id (an opaque
- * handle stands in), passkey and credential material, push subscriptions, invite data, theme
+ * handle stands in), credential material, push subscriptions, invite data, theme
  * and appearance settings, and every other profile's everything.
  */
 import crypto from 'node:crypto';

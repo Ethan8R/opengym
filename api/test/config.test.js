@@ -45,14 +45,14 @@ test('a Claude Code setup token is encrypted and reaches only the Agent SDK envi
   auth.setSetupToken('cli-setup-tok');
   assert.equal(cfg.load().auth.type, 'cli-token');
   assert.equal(auth.authStatus().type, 'cli-token');
-  process.env.RP_ID = 'gym.example.com';
+  process.env.SUPABASE_SECRET_KEY = 'sb_secret_must-never-leak';
   process.env.ADMIN_UIDS = 'someadmin';
   const env = cfg.jobEnv('/tmp/jobdir');
   assert.equal(env.CLAUDE_CODE_OAUTH_TOKEN, 'cli-setup-tok');
   assert.equal(env.HOME, '/tmp/jobdir', 'the Agent SDK writes any transient state into the job dir');
   assert.equal(env.CLAUDE_CONFIG_DIR, '/tmp/jobdir');
   assert.equal(env.CLAUDE_CODE_DISABLE_AUTO_MEMORY, '1');
-  assert.equal(env.RP_ID, undefined, 'nothing is inherited from this process');
+  assert.equal(env.SUPABASE_SECRET_KEY, undefined, 'nothing is inherited from this process');
   assert.equal(env.ADMIN_UIDS, undefined);
   assert.deepEqual(Object.keys(env).sort(), ['CLAUDE_CODE_DISABLE_AUTO_MEMORY', 'CLAUDE_CODE_OAUTH_TOKEN', 'CLAUDE_CONFIG_DIR', 'HOME', 'PATH', 'TMPDIR']);
 });

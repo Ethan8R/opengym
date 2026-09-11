@@ -129,7 +129,7 @@ A review reads a training block, not a training career: the window is capped at 
 sessions**. Your profile is identified by a stable pseudonym that is never the user id and never
 reversible.
 
-Excluded on purpose and permanently: **display name and user id, passkey and credential
+Excluded on purpose and permanently: **display name and user id, credential
 material, push subscriptions, invite data, theme and appearance settings, and every other
 profile's everything.** Only the math and the effort leave the box.
 

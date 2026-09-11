@@ -10,8 +10,9 @@ WORKDIR /app
 RUN apk add --no-cache bubblewrap libgcc libstdc++
 
 # Coach jobs run as this user, which is not root and cannot read /data (chmod 0700 at boot).
-# The Agent SDK runtime therefore sees its job's temp directory and nothing else — no state files, no
-# db.json, no session secret, no provider credential.
+# The Agent SDK runtime therefore sees its job's temp directory and nothing else — no state mirror,
+# no session secret, no provider credential. Its environment is built from scratch, so the
+# Supabase secret key never reaches it either (api/coach/config.js jobEnv).
 RUN addgroup -S coach && adduser -S -G coach -H -s /sbin/nologin coach
 
 COPY package.json package-lock.json* ./
@@ -19,7 +20,7 @@ RUN npm ci --omit=dev --include=optional \
  && npm cache clean --force \
  && node -e "import('@anthropic-ai/claude-agent-sdk').then(() => console.log('Claude Agent SDK ready'))" \
  && ./node_modules/.bin/codex --version
-COPY server.js ./
+COPY server.js supabase.js ./
 COPY coach/ ./coach/
 ENV NODE_ENV=production
 EXPOSE 3000

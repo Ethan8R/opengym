@@ -32,8 +32,8 @@ instances. Everything else (a crash you can only trigger on your own box, a scan
 is fine as a normal issue.
 
 Useful in a report: the version or commit, whether you're running the prebuilt images or a
-source build, your `RP_ID`/`ORIGIN` and what sits in front of the app, steps to reproduce, and
-what an attacker gets out of it.
+source build, your `ORIGIN` and what sits in front of the app, steps to reproduce, and what an
+attacker gets out of it. Never include your `SUPABASE_SECRET_KEY` in a report.
 
 **On response times:** this is a hobby project maintained by one person alongside school. There
 is no SLA and no bounty. Expect days rather than hours, and longer during exam periods. If a
@@ -43,19 +43,24 @@ in the thread; there's no objection, and no request to sit on it indefinitely.
 
 ## In scope
 
-- **`api/server.js`** — forging or replaying a session cookie, bypassing passkey verification,
-  reading or writing another user's data through `/api/data`, reaching `/api/admin/*` without
-  being an admin, or creating a profile without a valid code while `INVITE_ONLY=1`.
+- **`api/server.js` and `api/supabase.js`** — forging or replaying a session cookie, signing in
+  without the right password, reading or writing another user's data through `/api/data`,
+  reaching `/api/admin/*` without being an admin, creating a profile without a valid code while
+  `INVITE_ONLY=1`, or anything that reaches the Supabase secret key from outside the server.
+- **`supabase/migrations/`** — a grant or a missing `enable row level security` that makes a
+  table reachable with the project's publishable/anon key.
 - **Frontend** — XSS in the React app, or anything that lets a page on another origin read or
   change a signed-in user's data.
 - **Shipped deployment config** — `docker-compose.yml`, `web/nginx.conf`, the two Dockerfiles:
   a default that exposes something a self-hoster wouldn't expect to be exposed.
-- **The published images** `ghcr.io/duartesantos8/opengym-api` and `-web`.
 
 ## Out of scope
 
-- Anything that already assumes access to the host, to `./data`, or to the Docker socket. The
-  operator is trusted by design — see the security model below.
+- Anything that already assumes access to the host, to `./data`, to the Docker socket, or to the
+  Supabase project's dashboard or secret key. The operator is trusted by design — see the
+  security model below.
+- Supabase's own infrastructure. Report those to
+  [Supabase](https://supabase.com/.well-known/security.txt), not here.
 - Admins reading their users' workout history. That is the documented purpose of the admin
   dashboard, not a leak.
 - **Missing rate limiting**, brute force, or "I sent 100k requests and it got slow". The app
@@ -64,8 +69,8 @@ in the thread; there's no objection, and no request to sit on it indefinitely.
 - **Missing security headers** (CSP, HSTS, X-Frame-Options) — `web/nginx.conf` sets none; TLS
   and headers are the reverse proxy's job. A concrete attack that headers would have stopped is
   still worth reporting.
-- Instances served over plain `http://` on a LAN IP. Unsupported: passkeys don't work there and
-  the session cookie isn't marked `Secure`.
+- Instances served over plain `http://` on a LAN IP. Unsupported: the session cookie isn't
+  marked `Secure` there, and push and wake lock don't work at all.
 - Scanner output with no working exploit, and `npm audit` findings in build-time
   devDependencies (Vite, Vitest, Capacitor CLI) that never reach a running instance.
 - The GitHub Pages demo build — it has no backend at all, everything stays in that browser.
@@ -77,73 +82,92 @@ Read this before hosting openGym for anyone other than yourself.
 
 ### What it does
 
-- **Passkeys only.** No passwords, no email addresses, no reset flow. Registration and login are
-  verified server-side by `@simplewebauthn/server` against `expectedOrigin: ORIGIN` and
-  `expectedRPID: RP_ID`, and the authenticator's signature counter is stored and updated on every
-  login (`api/server.js:292-318`, `api/server.js:338-358`).
+- **Supabase Auth owns credentials.** Email addresses and password hashes live in Supabase's
+  `auth.users`; this server never stores or sees a password at rest. Sign-in posts the pair to
+  Supabase's token endpoint and keeps only the returned user id (`api/supabase.js` →
+  `passwordGrant`, `api/server.js:347`). Minimum length is 8 characters (`api/server.js:30`) and
+  a wrong password and an unknown address give the same answer, so the API doesn't tell an
+  attacker which addresses have profiles (`api/server.js:356`).
+- **The browser never holds a Supabase credential.** It talks only to this app's own `/api` on
+  the same origin. The project's secret key is read by the `api` container alone, and the four
+  tables grant nothing to the `anon`/`authenticated` roles, with row level security enabled and
+  no policies as a second lock (`supabase/migrations/*_opengym_backend.sql`).
+- **Changing a password proves the old one first** (`api/server.js:369`), and the address it
+  checks against comes from Supabase rather than the request, so the route can't be turned into
+  a way of testing someone else's credentials.
 - **Sessions are a signed cookie.** `gymsid` carries `<uid>:<expiry>:<version>` plus an
-  HMAC-SHA256 tag over it, compared in constant time (`api/server.js:148-161`). The key is 32
+  HMAC-SHA256 tag over it, compared in constant time (`api/server.js:198-206`). The key is 32
   random bytes generated on first run and written to `./data/secret` with mode `0600`
-  (`api/server.js:34-36`). The cookie is `HttpOnly` and `SameSite=Lax`, and gets `Secure` **only
-  when `ORIGIN` starts with `https:`** (`api/server.js:29`, `api/server.js:198-201`).
+  (`api/server.js:43`). The cookie is `HttpOnly` and `SameSite=Lax`, and gets `Secure` **only
+  when `ORIGIN` starts with `https:`** (`api/server.js:29`, `api/server.js:243-245`). Supabase's
+  own access token is never sent to the browser and never stored.
 - **Any user can end every session they have.** `POST /api/logout/all` increments that account's
-  session version, and every authenticated request checks the version in the cookie against the
-  one on the user record (`api/server.js:167`, `api/server.js:187-188`), so every cookie ever
-  issued for the account — on every device, including a copy someone walked off with — stops
-  verifying at once. Passkeys are untouched; signing back in works immediately.
-- **Data is isolated per user by the session's uid.** `GET`/`PUT /api/data` only ever touch
-  `state-<uid>.json` for the caller (`api/server.js:375-392`); no route lets a normal user name
-  another user.
+  `session_version` in Postgres, and every authenticated request compares the version in the
+  cookie against it (`api/server.js:233`, `api/server.js:392`), so every cookie ever issued for
+  the account — on every device, including a copy someone walked off with — stops verifying at
+  once. The password is untouched; signing back in works immediately.
+- **Data is isolated per user by the session's uid.** `GET`/`PUT /api/data` only ever read or
+  write the caller's own `user_state` row (`api/server.js:403-419`); no route lets a normal user
+  name another user.
 - **Disabling an account takes effect immediately.** Every authenticated request and every login
-  is rejected for a disabled user (`api/server.js:184`, `api/server.js:357`).
+  is rejected for a disabled user (`api/server.js:229`, `api/server.js:363`).
 
 ### What it does not do
 
-- **Nothing in `./data` is encrypted.** It holds `db.json` (users, passkey public keys, push
-  subscriptions, invite codes), one `state-<uid>.json` per user with their complete workout
-  history and body-weight log, `secret`, and `vapid.json`. Anyone who can read that folder — you,
-  whoever holds the backups, whoever gets into the host — can read every user's data, and with
-  `secret` can mint a valid session cookie for any account. **If you host openGym for other
-  people, they are trusting you exactly as much as they'd trust any server operator.**
-- **Admins can read everything.** A user listed in `ADMIN_UIDS` (or flagged `admin: true` in
-  `db.json`) gets every user's full history and body weight, can disable accounts, and can create
-  or revoke invite codes (`api/server.js:460-540`). Off by default — a fresh instance has no admin.
+- **Nothing is encrypted at rest, in either place.** The Supabase project holds every profile's
+  complete workout history and body-weight log in `user_state`, readable by anyone with the
+  project's dashboard or secret key. `./data` holds `secret`, `vapid.json`, the Coach's job
+  records, and a plain-text mirror of every profile's state; with `secret` alone, anyone who can
+  read that folder can mint a valid session cookie for any account. **If you host openGym for
+  other people, they are trusting you exactly as much as they'd trust any server operator** —
+  and now also trusting Supabase as your database host.
+- **The secret key is the whole database.** It bypasses row level security by design. Anything
+  that leaks it — a committed `.env`, a log line, a backup, a compromised host — hands over every
+  account, and rotating it in the Supabase dashboard is the only fix. It is deliberately never
+  put in a browser, never logged, and never passed to a Coach subprocess
+  (`api/coach/config.js` → `jobEnv`, asserted in `api/test/config.test.js`).
+- **Admins can read everything.** A user listed in `ADMIN_UIDS` (or with `admin = true` in the
+  `profiles` table) gets every user's full history and body weight plus their email address, can
+  disable accounts, and can create or revoke invite codes (`api/server.js:494-580`). Off by
+  default — a fresh instance has no admin.
 - **Sessions can't be revoked one device at a time.** Revocation is per *account*, not per
   session: `POST /api/logout/all` kills all of them at once and there is no device list to pick
   from. `POST /api/logout` on its own only clears the cookie in that one browser
-  (`api/server.js:361`) — a copy taken beforehand keeps working. Sessions last **90 days** by
+  (`api/server.js:385`) — a copy taken beforehand keeps working. Sessions last **90 days** by
   default, settable with `SESSION_DAYS` (`api/server.js:26`); each cookie carries the lifetime it
-  was issued with, so changing the setting doesn't reach cookies that are already out. Deleting
+  was issued with, so changing the setting doesn't reach cookies that are already out. Changing a
+  password does **not** end other sessions either — use "Sign out everywhere" for that. Deleting
   `./data/secret` and restarting still works as the instance-wide reset, and disabling an account
   still locks out one user completely.
 - **CSRF protection is `SameSite=Lax` and nothing else.** There are no CSRF tokens.
-- **User verification is preferred, not required.** Both handshakes pass
-  `requireUserVerification: false` (`api/server.js:297`, `api/server.js:343`), so a passkey
-  released without a biometric or PIN is still accepted. In practice: unlocked device ≈ account
-  access.
-- **One passkey per profile, and no recovery.** Every successful registration creates a *new*
-  profile (`api/server.js:309-319`); there is no route to attach a second passkey to an existing
-  one, and no email or reset path. Lose the passkey and that profile is unreachable — only direct
-  surgery on `./data` gets it back.
-- **Disabling someone isn't a ban.** They can still register a fresh profile with a new passkey
-  unless `INVITE_ONLY=1` is set.
+- **Email addresses are not verified.** Accounts are created already confirmed
+  (`email_confirm: true` in `api/supabase.js`), because hosted Supabase's built-in mailer sends
+  only a couple of messages an hour and a personal instance usually has no SMTP. Anyone can sign
+  up with an address that isn't theirs. Connect real SMTP to the project and drop that flag if
+  that matters to you.
+- **There is no password reset.** No SMTP, no reset flow. The operator sets a new password under
+  **Authentication → Users** in the Supabase dashboard.
+- **No multi-factor, and no password strength rule beyond 8 characters** (`api/server.js:30`).
+  Supabase supports both; neither is wired up here.
+- **Disabling someone isn't a ban.** They can still register a fresh profile with another email
+  address unless `INVITE_ONLY=1` is set.
 - **HTTPS is required and the app doesn't provide it.** The API container speaks plain HTTP and
-  nginx listens on `:80` (`web/nginx.conf`); TLS is your reverse proxy's job. Without it,
-  browsers won't do passkeys at all (except on `http://localhost`) and the session cookie is sent
-  in the clear.
-- **No rate limiting anywhere.** Nothing throttles logins, registrations or writes, and
-  `POST /api/register/options` still answers whether an invite code is valid
-  (`api/server.js:272`), so an invite-only instance on the open internet should have a rate limit
-  in front of it. New invite codes are 16 hex characters — 64 bits (`api/server.js:525`) — which
-  makes guessing one impractical even unthrottled; codes generated by earlier versions are 8
-  characters / 32 bits and still work, so revoke and reissue any that are still unused. The only
-  hard limit
-  in the app is a 5 MB request body (`api/server.js:27`).
+  nginx listens on `:80` (`web/nginx.conf`); TLS is your reverse proxy's job. Without it the
+  session cookie — and the password on its way to `/api/login` — travel in the clear, and push
+  and wake lock don't work at all (except on `http://localhost`).
+- **No rate limiting anywhere.** Nothing throttles logins, registrations or writes. With
+  passwords rather than passkeys this now matters more than it used to: **put a rate limit in
+  front of `/api/login` on any instance reachable from the open internet.** `POST /api/register`
+  also answers whether an invite code is valid (`api/server.js:318`), so the same applies there.
+  Invite codes are 16 hex characters — 64 bits (`api/server.js:567`) — which makes guessing one
+  impractical even unthrottled. The only hard limit in the app is a 5 MB request body
+  (`api/server.js:27`).
 - **A few endpoints answer without a session:** `/api/health` (which includes the total user
-  count), `/api/config` (whether invite-only is on), `/api/push/public-key`, and the
-  register/login handshakes.
-- **Changing `RP_ID` invalidates every existing passkey.** They were bound to the old hostname
-  and will fail verification against the new one. The data stays on disk but is unreachable until
-  each user registers again — as a *new* profile. Choose your hostname before anyone registers.
+  count), `/api/config` (whether invite-only is on and the minimum password length),
+  `/api/push/public-key`, and `/api/register` / `/api/login` themselves.
+- **The account cache is up to 60 seconds stale.** Profiles and push subscriptions are held in
+  memory and reloaded on a timer (`api/server.js:59`). Changes made through the app update it
+  immediately, but editing the `profiles` table straight in the Supabase dashboard — disabling
+  someone, say — can take up to a minute to take effect.
 - **Guest mode never reaches the backend.** That data lives unencrypted in the browser's
   `localStorage` and is gone when the browser storage is cleared.

@@ -167,8 +167,8 @@ export function publicConfig() {
 
 /**
  * The environment a job's provider process gets. Deliberately built from nothing rather than
- * filtered from process.env: the child must not inherit RP_ID, ADMIN_UIDS, VAPID material or
- * anything else this server happens to hold.
+ * filtered from process.env: the child must not inherit SUPABASE_SECRET_KEY, ADMIN_UIDS, VAPID
+ * material or anything else this server happens to hold.
  */
 export function jobEnv(jobDir) {
   const cfg = load();

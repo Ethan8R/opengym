@@ -2,11 +2,12 @@
 media/img/
 media/gif/
 
-# Runtime data — users, passkeys, per-user state, session secret
+# Runtime data — session secret, VAPID keys, Coach job records, per-user state mirror
 data/
 
 # Local config
 .env
+.env.vercel
 
 # Build output / deps
 frontend/dist/

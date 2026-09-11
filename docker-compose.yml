@@ -21,10 +21,10 @@ services:
         fi
     restart: "no"
 
-  # Passkey auth + per-user data (Node, no framework).
-  # image: prebuilt (docker compose pull). build: from source (docker compose up --build).
+  # Supabase Auth (email + password) + per-user data in Supabase Postgres (Node, no framework).
+  # Built from source, not pulled: this fork's API talks to Supabase, so the upstream published
+  # image would be the wrong server entirely.
   api:
-    image: ghcr.io/duartesantos8/opengym-api:latest
     build: ./api
     restart: unless-stopped
     env_file: .env
@@ -33,15 +33,18 @@ services:
       - DATA_DIR=/data
       - COACH_CODEX_HOME=/codex
     volumes:
-      - ./data:/data         # users, passkeys, per-user state, session secret — BACK THIS UP
+      # Accounts and workout data live in Supabase now. What is left here is the session
+      # secret (also the Coach's credential-encryption key), the VAPID keypair, Coach job
+      # records, and a read-only mirror of each profile's state. Losing it signs everyone out
+      # and disconnects the Coach; it does not lose anyone's training history.
+      - ./data:/data
       # ChatGPT/Codex refresh tokens are kept separate from app data and mounted only into the
       # API container. This directory is owned by the unprivileged Coach runtime.
       - ./data/codex:/codex
 
   # Builds the React frontend (multi-stage) and serves it, proxying /api → api
-  # and the exercise media from the shared volume. Single origin for passkeys.
+  # and the exercise media from the shared volume. Single origin, so the session cookie works.
   web:
-    image: ghcr.io/duartesantos8/opengym-web:latest
     build:
       context: .
       dockerfile: web/Dockerfile
